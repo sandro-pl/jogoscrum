@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scrum Card Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        .card {
+            border-radius: 0.75rem;
+            padding: 1rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+            min-height: 180px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            border: 2px solid transparent;
+        }
+        .card.is-clickable {
+             cursor: pointer;
+        }
+        .card.is-clickable:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.1);
+            border-color: #3b82f6;
+        }
+        .story-card { background-color: #ffffff; border-left: 5px solid #3b82f6; }
+        .solution-card { background-color: #eff6ff; border-left: 5px solid #3b82f6; }
+        .card-title { font-weight: 700; font-size: 1.1rem; margin-bottom: 0.5rem; }
+        .card-description { font-size: 0.9rem; flex-grow: 1; }
+        .card-hours { font-weight: 600; text-align: right; }
+        .board-column {
+            min-height: 400px;
+            border-radius: 0.5rem;
+            padding: 1rem;
+        }
+        .dice {
+            width: 60px;
+            height: 60px;
+            border-radius: 0.5rem;
+            font-size: 2rem;
+            font-weight: 700;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            overflow: hidden;
+        }
+        .blocked::after {
+            content: 'BLOQUEADO';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-15deg);
+            color: #ef4444;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            font-weight: 900;
+            font-size: 1.25rem;
+            border: 2px solid #ef4444;
+            pointer-events: none;
+        }
+        .story-card-wrapper {
+            position: relative;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="game-container" class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-slate-900">Scrum Card Game</h1>
+            <p class="text-slate-600 mt-2">Uma simulação digital do framework Scrum.</p>
+        </header>
+
+        <!-- Setup Screen -->
+        <div id="setup-screen" class="max-w-md mx-auto bg-white p-8 rounded-lg shadow-lg">
+            <h2 class="text-2xl font-bold mb-6 text-center">Configuração do Jogo</h2>
+            <div class="mb-4">
+                <label for="player-count" class="block text-sm font-medium text-slate-700 mb-2">Número de Jogadores (4-6):</label>
+                <input type="number" id="player-count" min="4" max="6" value="4" class="w-full p-2 border border-slate-300 rounded-md">
+            </div>
+            <div id="player-names-container" class="space-y-3 mb-6"></div>
+            <button id="start-game-btn" class="w-full bg-blue-600 text-white py-3 rounded-md font-semibold hover:bg-blue-700 transition-colors">Iniciar Jogo</button>
+        </div>
+
+        <!-- Game Board (hidden by default) -->
+        <main id="game-board" class="hidden">
+            <!-- Game Info Bar -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 bg-white p-4 rounded-lg shadow">
+                <div class="text-center">
+                    <h3 class="font-semibold text-slate-500 text-sm">SPRINT</h3>
+                    <p id="sprint-counter" class="text-2xl font-bold">1 / 3</p>
+                </div>
+                <div class="text-center">
+                    <h3 class="font-semibold text-slate-500 text-sm">DIA</h3>
+                    <p id="day-counter" class="text-2xl font-bold">1 / 3</p>
+                </div>
+                <div class="text-center">
+                    <h3 class="font-semibold text-slate-500 text-sm">JOGADOR ATUAL</h3>
+                    <p id="current-player" class="text-2xl font-bold">1</p>
+                </div>
+                <div class="text-center">
+                    <h3 class="font-semibold text-slate-500 text-sm">VELOCIDADE PLANEJADA</h3>
+                    <p id="planned-velocity" class="text-2xl font-bold">0</p>
+                </div>
+            </div>
+            
+            <!-- Player Controls -->
+            <div id="player-controls" class="text-center mb-8 p-6 bg-white rounded-lg shadow-md min-h-[124px]">
+                 <h2 id="player-prompt" class="text-xl font-semibold mb-4"></h2>
+                 <div id="turn-form-container"></div>
+                 <div id="dice-and-draw-container" class="hidden justify-center items-center gap-4">
+                    <div id="dice-container" class="flex gap-2">
+                        <div id="dice1" class="dice bg-slate-200 flex items-center justify-center">?</div>
+                        <div id="dice2" class="dice bg-slate-200 flex items-center justify-center">?</div>
+                    </div>
+                    <button id="roll-dice-btn" class="bg-green-600 text-white py-3 px-6 rounded-md font-semibold hover:bg-green-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed">1. Rolar Dados</button>
+                    <button id="draw-card-btn" class="bg-amber-500 text-white py-3 px-6 rounded-md font-semibold hover:bg-amber-600 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed">2. Puxar Carta</button>
+                 </div>
+            </div>
+
+            <!-- Board Columns -->
+            <div id="board-columns-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div id="backlog-column">
+                    <h2 class="text-xl font-bold text-center mb-4 text-slate-700">Backlog</h2>
+                    <div id="backlog-cards" class="board-column bg-slate-100 space-y-4"></div>
+                </div>
+                <div id="todo-column">
+                    <h2 class="text-xl font-bold text-center mb-4 text-red-700">A Fazer</h2>
+                    <div id="todo-cards" class="board-column bg-red-100 space-y-4"></div>
+                </div>
+                <div id="inprogress-column">
+                    <h2 class="text-xl font-bold text-center mb-4 text-amber-700">Em Progresso</h2>
+                    <div id="inprogress-cards" class="board-column bg-amber-100 space-y-4"></div>
+                </div>
+                <div id="done-column">
+                    <h2 class="text-xl font-bold text-center mb-4 text-green-700">Feito</h2>
+                    <div id="done-cards" class="board-column bg-green-100 space-y-4"></div>
+                </div>
+            </div>
+
+            <!-- Solution Cards Area -->
+            <div class="mt-8">
+                <h2 class="text-xl font-bold text-center mb-4">Cartas de Solução da Equipe</h2>
+                <div id="solution-cards-area" class="min-h-[180px] bg-white p-4 rounded-lg shadow flex flex-wrap gap-4 justify-center items-center">
+                    <p class="text-slate-500">Nenhuma solução coletada ainda.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2 id="modal-title" class="text-2xl font-bold"></h2>
+            <div id="modal-body" class="mb-6"></div>
+            <button id="modal-close-btn" class="bg-blue-600 text-white py-2 px-8 rounded-md font-semibold hover:bg-blue-700 transition-colors">OK</button>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA ---
+        const stories = [
+            { id: 1, title: "Troca segura de e-mails (destinatários pré-definidos)", hours: 24, originalHours: 24, blockedBy: null, assignedTo: [] },
+            { id: 2, title: "Envio seguro de arquivos grandes", hours: 21, originalHours: 21, blockedBy: null, assignedTo: [] },
+            { id: 3, title: "Definir tempo limite para leitura de e-mails", hours: 27, originalHours: 27, blockedBy: null, assignedTo: [] },
+            { id: 4, title: "Troca segura de e-mails (destinatários não especificados)", hours: 30, originalHours: 30, blockedBy: null, assignedTo: [] },
+            { id: 5, title: "Administradores monitoram e-mails", hours: 16, originalHours: 16, blockedBy: null, assignedTo: [] },
+            { id: 6, title: "Políticas de segurança e grupos de destinatários", hours: 24, originalHours: 24, blockedBy: null, assignedTo: [] },
+            { id: 7, title: "Administração eficaz de e-mails", hours: 43, originalHours: 43, blockedBy: null, assignedTo: [] },
+            { id: 8, title: "Backup seguro de e-mails", hours: 23, originalHours: 23, blockedBy: null, assignedTo: [] },
+            { id: 9, title: "Exclusão completa de e-mails", hours: 36, originalHours: 36, blockedBy: null, assignedTo: [] },
+            { id: 10, title: "Mensagens curtas e seguras", hours: 28, originalHours: 28, blockedBy: null, assignedTo: [] },
+            { id: 11, title: "Acesso a e-mails pelo celular", hours: 68, originalHours: 68, blockedBy: null, assignedTo: [] },
+            { id: 12, title: "Bloqueio de e-mails de spam", hours: 24, originalHours: 24, blockedBy: null, assignedTo: [] },
+        ];
+
+        const opportunityCards = [
+            // Eventos
+            { type: 'event', title: 'Problema de saúde', description: 'Pule seu próximo turno.', action: 'skip_turn' },
+            { type: 'event', title: 'Aniversário', description: 'Diminua 1 ponto do próximo resultado de cada jogador da equipe.', action: 'team_debuff', value: 1 },
+            { type: 'event', title: 'Ligação de emergência', description: 'Todo mundo pula o próximo turno.', action: 'team_skip_turn' },
+            { type: 'event', title: 'Mudança de Requisitos', description: 'O PO decide efetuar mudanças no projeto, então esta história vai levar 4 horas adicionais.', action: 'add_hours', value: 4 },
+            { type: 'event', title: 'Disco Rígido Travado', description: 'Remova todo o progresso da história em andamento.', action: 'reset_progress' },
+            { type: 'event', title: 'Viagem de Negócios', description: 'Você foi enviado a uma viagem de negócios. Pule o próximo turno.', action: 'skip_turn' },
+            { type: 'event', title: 'Custo Extra', description: 'Seu trabalho custa mais do que planejado. Adicione 6 horas à estimativa da história.', action: 'add_hours', value: 6 },
+            { type: 'event', title: 'Horas Extra', description: 'Você está fazendo horas extra. Jogue os dados novamente.', action: 'extra_roll' },
+            { type: 'event', title: 'Boa Contratação', description: 'O novo contratado é bom. Jogue os dois dados agora e adicione o valor ao último lance.', action: 'bonus_roll' },
+            { type: 'event', title: 'Guru', description: 'Um guru visitou seu escritório. Você pode remover imediatamente um cartão de problema da história atual.', action: 'remove_problem' },
+            { type: 'event', title: 'Esforço Visível', description: 'O chefe reconhece seu esforço. Você pode adicionar 3 pontos ao último lance.', action: 'add_points', value: 3 },
+            { type: 'event', title: 'Tudo Certo', description: 'As coisas estão indo incrivelmente bem. Adicione 4 ao último lance.', action: 'add_points', value: 4 },
+            { type: 'event', title: 'Home Office', description: 'Você trabalhou bem de casa. Adicione 2 pontos ao último lance.', action: 'add_points', value: 2 },
+            { type: 'event', title: 'Ajuda', description: 'Você recebeu ajuda de um colega. Uma história em execução pode ser imediatamente finalizada.', action: 'complete_story' },
+            // Problemas
+            { type: 'problem', title: 'Especificação não clara', description: 'A especificação não está suficientemente clara para você.', problemType: 'clarity' },
+            { type: 'problem', title: 'Usuários Insatisfeitos', description: 'Você sente que os usuários não estão satisfeitos.', problemType: 'feedback' },
+            { type: 'problem', title: 'Má Qualidade', description: 'Você não pode finalizar a história porque a qualidade é inadequada.', problemType: 'quality' },
+            { type: 'problem', title: 'Mau Humor', description: 'Hoje você está chateado, então está muito preguiçoso para trabalhar.', problemType: 'motivation' },
+            { type: 'problem', title: 'Má Comunicação', description: 'Você não pode se comunicar bem com outros membros da equipe.', problemType: 'communication' },
+            { type: 'problem', title: 'Habilidades Fracas', description: 'Você não possui as habilidades suficientes para finalizar o trabalho.', problemType: 'skills' },
+            { type: 'problem', title: 'Dados Perdidos', description: 'O PO não entregou dados importantes.', problemType: 'data' },
+            { type: 'problem', title: 'Obstáculo Técnico', description: 'Seu trabalho está bloqueado por um obstáculo técnico.', problemType: 'technical' },
+            { type: 'problem', title: 'Sistema Instável', description: 'O sistema é muito instável. Você está lidando com grandes dificuldades.', problemType: 'stability' },
+            { type: 'problem', title: 'Problemas de Integração', description: 'Seu colega te forneceu o componente, que é diferente do que você esperava.', problemType: 'integration' },
+            // Soluções
+            { type: 'solution', title: 'Descanse um pouco', description: 'Refresque sua mente.', solves: ['motivation'] },
+            { type: 'solution', title: 'Especialista', description: 'Contrate um especialista.', solves: ['technical', 'skills'] },
+            { type: 'solution', title: 'Discernimento', description: 'Aplique seu discernimento.', solves: ['clarity'] },
+            { type: 'solution', title: 'Membro Habilidoso', description: 'Envolva um membro habilidoso de outra equipe.', solves: ['skills', 'technical'] },
+            { type: 'solution', title: 'Testes Automatizados', description: 'Introduzir testes automatizados.', solves: ['quality', 'stability', 'integration'] },
+            { type: 'solution', title: 'Comunicação', description: 'Melhore a comunicação entre todos.', solves: ['communication', 'integration'] },
+            { type: 'solution', title: 'Colaboração', description: 'Junte a equipe com o PO e intercambiem informação importante.', solves: ['data', 'feedback', 'clarity'] },
+            { type: 'solution', title: 'Compartilhar Metas', description: 'Junte a equipe e compartilhe as metas chave do projeto.', solves: ['motivation', 'communication'] },
+            { type: 'solution', title: 'Programação em Par', description: 'Aplique programação em pares.', solves: ['skills', 'quality', 'communication'] },
+            { type: 'solution', title: 'Melhorar Habilidades', description: 'Faça treinamentos para aumentar o nível de suas habilidades.', solves: ['skills'] },
+        ];
+
+        // --- GAME STATE ---
+        let gameState = {
+            phase: 'setup', // 'setup', 'planning', 'turn', 'end_sprint'
+            players: [],
+            playerCount: 4,
+            currentSprint: 1,
+            currentDay: 1,
+            currentPlayerIndex: 0,
+            plannedVelocity: 0,
+            backlog: [],
+            todo: [],
+            inProgress: [],
+            done: [],
+            opportunityDeck: [],
+            teamSolutions: [],
+            activeStoryId: null,
+            lastDiceRoll: 0,
+            skippingTurn: [],
+            teamDebuff: 0,
+        };
+
+        // --- DOM ELEMENTS ---
+        const setupScreen = document.getElementById('setup-screen');
+        const gameBoard = document.getElementById('game-board');
+        const playerCountInput = document.getElementById('player-count');
+        const playerNamesContainer = document.getElementById('player-names-container');
+        const startGameBtn = document.getElementById('start-game-btn');
+        const sprintCounter = document.getElementById('sprint-counter');
+        const dayCounter = document.getElementById('day-counter');
+        const currentPlayerEl = document.getElementById('current-player');
+        const plannedVelocityEl = document.getElementById('planned-velocity');
+        const playerPrompt = document.getElementById('player-prompt');
+        const turnFormContainer = document.getElementById('turn-form-container');
+        const diceAndDrawContainer = document.getElementById('dice-and-draw-container');
+        const rollDiceBtn = document.getElementById('roll-dice-btn');
+        const drawCardBtn = document.getElementById('draw-card-btn');
+        const diceContainer = {
+            dice1: document.getElementById('dice1'),
+            dice2: document.getElementById('dice2'),
+        };
+        const columns = {
+            container: document.getElementById('board-columns-container'),
+            backlog: document.getElementById('backlog-cards'),
+            todo: document.getElementById('todo-cards'),
+            inprogress: document.getElementById('inprogress-cards'),
+            done: document.getElementById('done-cards'),
+        };
+        const solutionArea = document.getElementById('solution-cards-area');
+        const modal = {
+            overlay: document.getElementById('modal'),
+            title: document.getElementById('modal-title'),
+            body: document.getElementById('modal-body'),
+            closeBtn: document.getElementById('modal-close-btn'),
+        };
+
+        // --- GAME LOGIC ---
+
+        function generateNameInputs() {
+            const count = parseInt(playerCountInput.value);
+            playerNamesContainer.innerHTML = '';
+            for (let i = 0; i < count; i++) {
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.id = `player-name-${i}`;
+                input.placeholder = `Nome do Jogador ${i + 1}`;
+                input.className = 'w-full p-2 border border-slate-300 rounded-md';
+                playerNamesContainer.appendChild(input);
+            }
+        }
+
+        function initGame() {
+            gameState.playerCount = parseInt(playerCountInput.value);
+            gameState.players = [];
+            for (let i = 0; i < gameState.playerCount; i++) {
+                const nameInput = document.getElementById(`player-name-${i}`);
+                gameState.players.push({ name: nameInput.value || `Jogador ${i + 1}` });
+            }
+
+            gameState.skippingTurn = Array(gameState.playerCount).fill(false);
+            gameState.currentSprint = 1;
+            gameState.backlog = JSON.parse(JSON.stringify(stories));
+            gameState.todo = [];
+            gameState.inProgress = [];
+            gameState.done = [];
+            gameState.teamSolutions = [];
+            setupScreen.classList.add('hidden');
+            gameBoard.classList.remove('hidden');
+            startSprint();
+        }
+
+        function startSprint() {
+            gameState.phase = 'planning';
+            gameState.todo.push(...gameState.inProgress);
+            gameState.inProgress = [];
+            gameState.currentDay = 1;
+            gameState.currentPlayerIndex = 0;
+            showPlanningControls();
+            updateUI();
+        }
+        
+        function showPlanningControls() {
+            playerPrompt.textContent = `Planejamento da Sprint ${gameState.currentSprint}: Selecione histórias do Backlog.`;
+            turnFormContainer.innerHTML = '';
+            diceAndDrawContainer.classList.add('hidden');
+            diceAndDrawContainer.classList.remove('flex');
+
+            const button = document.createElement('button');
+            button.textContent = 'Iniciar Sprint';
+            button.className = 'bg-blue-600 text-white py-2 px-6 rounded-md font-semibold hover:bg-blue-700 transition-colors mt-4';
+            button.onclick = startWorkPhase;
+            turnFormContainer.appendChild(button);
+        }
+
+        function startWorkPhase() {
+            if (gameState.todo.length === 0) {
+                 showModal(
+                    "Nenhuma História Selecionada",
+                    "Você precisa selecionar pelo menos uma história do Backlog para iniciar a Sprint."
+                );
+                return;
+            }
+            gameState.phase = 'turn';
+            gameState.plannedVelocity = gameState.todo.reduce((sum, story) => sum + story.originalHours, 0);
+            startDay();
+        }
+
+        function startDay() {
+            if (gameState.currentDay > 3) {
+                endSprint();
+                return;
+            }
+            gameState.currentPlayerIndex = 0;
+            playerTurn();
+        }
+
+        function nextPlayer() {
+            gameState.currentPlayerIndex++;
+            if (gameState.currentPlayerIndex >= gameState.playerCount) {
+                gameState.currentDay++;
+                if (gameState.currentDay > 3) {
+                    endSprint();
+                    return;
+                }
+                gameState.currentPlayerIndex = 0;
+            }
+            playerTurn();
+        }
+        
+        function playerTurn() {
+            gameState.phase = 'turn';
+            gameState.activeStoryId = null;
+            
+            if (gameState.skippingTurn[gameState.currentPlayerIndex]) {
+                gameState.skippingTurn[gameState.currentPlayerIndex] = false;
+                showModal("Turno Pulado", `O Jogador ${getCurrentPlayer().name} pulou este turno.`, nextPlayer);
+            } else {
+                showTurnSelectionForm();
+            }
+            updateUI();
+        }
+
+        function getCurrentPlayer() {
+            return gameState.players[gameState.currentPlayerIndex];
+        }
+
+        function showTurnSelectionForm() {
+            playerPrompt.textContent = `${getCurrentPlayer().name}, selecione uma história para trabalhar.`;
+            turnFormContainer.innerHTML = '';
+            diceAndDrawContainer.classList.add('hidden');
+            diceAndDrawContainer.classList.remove('flex');
+
+            const availableStories = [...gameState.todo, ...gameState.inProgress];
+
+            if (availableStories.length === 0) {
+                showModal("Nenhuma História", "Não há histórias para trabalhar. Passando o turno.", nextPlayer);
+                return;
+            }
+
+            const selectEl = document.createElement('select');
+            selectEl.id = 'story-select';
+            selectEl.className = 'w-full max-w-xs p-2 border border-slate-300 rounded-md';
+            
+            availableStories.forEach(story => {
+                const option = document.createElement('option');
+                option.value = story.id;
+                option.textContent = `#${story.id} - ${story.title}`;
+                selectEl.appendChild(option);
+            });
+
+            const button = document.createElement('button');
+            button.textContent = 'Trabalhar nesta História';
+            button.className = 'bg-blue-600 text-white py-2 px-4 rounded-md font-semibold hover:bg-blue-700 transition-colors ml-2';
+            
+            button.onclick = () => {
+                const selectedId = parseInt(selectEl.value);
+                confirmStorySelection(selectedId);
+            };
+
+            turnFormContainer.appendChild(selectEl);
+            turnFormContainer.appendChild(button);
+        }
+
+        function confirmStorySelection(selectedId) {
+            gameState.activeStoryId = selectedId;
+            let storyToUpdate;
+            
+            const storyInTodoIndex = gameState.todo.findIndex(s => s.id === selectedId);
+            if (storyInTodoIndex !== -1) {
+                const [story] = gameState.todo.splice(storyInTodoIndex, 1);
+                gameState.inProgress.push(story);
+                storyToUpdate = story;
+            } else {
+                storyToUpdate = gameState.inProgress.find(s => s.id === selectedId);
+            }
+
+            if (storyToUpdate) {
+                const playerName = getCurrentPlayer().name;
+                if (!storyToUpdate.assignedTo.includes(playerName)) {
+                    storyToUpdate.assignedTo.push(playerName);
+                }
+            }
+
+            turnFormContainer.innerHTML = '';
+            diceAndDrawContainer.classList.remove('hidden');
+            diceAndDrawContainer.classList.add('flex');
+            playerPrompt.textContent = `Você está trabalhando na história #${selectedId}. Role os dados.`;
+            rollDiceBtn.disabled = false;
+            drawCardBtn.disabled = true;
+            updateUI();
+        }
+
+        function handlePlanningClick(event) {
+            if (gameState.phase !== 'planning') return;
+
+            const cardElement = event.target.closest('.card.is-clickable');
+            if (!cardElement) return;
+
+            const storyId = parseInt(cardElement.dataset.storyId);
+            const fromColumn = cardElement.dataset.column;
+
+            if (fromColumn === 'backlog') {
+                const storyIndex = gameState.backlog.findIndex(s => s.id === storyId);
+                if (storyIndex > -1) {
+                    const [story] = gameState.backlog.splice(storyIndex, 1);
+                    gameState.todo.push(story);
+                }
+            } else if (fromColumn === 'todo') {
+                const storyIndex = gameState.todo.findIndex(s => s.id === storyId);
+                if (storyIndex > -1) {
+                    const [story] = gameState.todo.splice(storyIndex, 1);
+                    gameState.backlog.push(story);
+                    gameState.backlog.sort((a, b) => a.id - b.id);
+                }
+            }
+            updateUI();
+        }
+
+        function rollDice() {
+            if (!gameState.activeStoryId) return;
+            rollDiceBtn.disabled = true;
+
+            const d1 = Math.floor(Math.random() * 6) + 1;
+            const d2 = Math.floor(Math.random() * 6) + 1;
+            let total = d1 + d2;
+
+            if(gameState.teamDebuff > 0){
+                total = Math.max(0, total - gameState.teamDebuff);
+                gameState.teamDebuff = 0;
+            }
+
+            diceContainer.dice1.textContent = d1;
+            diceContainer.dice2.textContent = d2;
+            gameState.lastDiceRoll = total;
+            
+            playerPrompt.textContent = `Você rolou ${total}. Agora, puxe uma carta.`;
+            drawCardBtn.disabled = false;
+        }
+
+        function drawOpportunityCard() {
+            drawCardBtn.disabled = true;
+            if (gameState.opportunityDeck.length === 0) {
+                gameState.opportunityDeck = [...opportunityCards].sort(() => Math.random() - 0.5);
+            }
+            const card = gameState.opportunityDeck.pop();
+            
+            let cardCategory = '';
+            let cardCategoryClass = '';
+            switch(card.type) {
+                case 'event': 
+                    cardCategory = 'Evento'; 
+                    cardCategoryClass = 'event';
+                    break;
+                case 'problem': 
+                    cardCategory = 'Problema'; 
+                    cardCategoryClass = 'problem';
+                    break;
+                case 'solution': 
+                    cardCategory = 'Solução'; 
+                    cardCategoryClass = 'solution';
+                    break;
+            }
+            const modalTitle = `${cardCategory} para ${getCurrentPlayer().name}: ${card.title}`;
+
+            showModal(modalTitle, card.description, () => applyCardEffect(card), cardCategoryClass);
+        }
+
+        function applyCardEffect(card) {
+            let pointsToApply = gameState.lastDiceRoll;
+            let continueTurn = true;
+
+            const activeStory = gameState.inProgress.find(s => s.id === gameState.activeStoryId);
+
+            switch (card.type) {
+                case 'event':
+                    switch (card.action) {
+                        case 'skip_turn':
+                            gameState.skippingTurn[gameState.currentPlayerIndex] = true;
+                            break;
+                        case 'team_debuff':
+                            gameState.teamDebuff = card.value || 1;
+                            break;
+                        case 'team_skip_turn':
+                            for(let i = 0; i < gameState.playerCount; i++) {
+                                if (i !== gameState.currentPlayerIndex) gameState.skippingTurn[i] = true;
+                            }
+                            break;
+                        case 'add_hours':
+                            if (activeStory) activeStory.hours += card.value;
+                            break;
+                        case 'reset_progress':
+                             if(activeStory) activeStory.hours = activeStory.originalHours;
+                             break;
+                        case 'extra_roll':
+                            playerPrompt.textContent = `Hora extra! Role os dados novamente.`;
+                            rollDiceBtn.disabled = false;
+                            continueTurn = false;
+                            break;
+                        case 'bonus_roll':
+                            const bonus1 = Math.floor(Math.random() * 6) + 1;
+                            const bonus2 = Math.floor(Math.random() * 6) + 1;
+                            pointsToApply += bonus1 + bonus2;
+                            showModal("Bônus!", `Você rolou um bônus de ${bonus1 + bonus2}, totalizando ${pointsToApply} pontos de trabalho.`);
+                            break;
+                        case 'remove_problem':
+                            if (activeStory && activeStory.blockedBy) {
+                                activeStory.blockedBy = null;
+                            } else {
+                                showModal("Sem efeito", "A história atual não estava bloqueada.");
+                            }
+                            break;
+                        case 'add_points':
+                            pointsToApply += card.value;
+                            break;
+                        case 'complete_story':
+                            pointsToApply = 999;
+                            break;
+                    }
+                    break;
+                case 'problem':
+                    if (activeStory) {
+                        activeStory.blockedBy = card.problemType;
+                    }
+                    break;
+                case 'solution':
+                    gameState.teamSolutions.push(card);
+                    break;
+            }
+            
+            if (continueTurn) {
+                if (activeStory) {
+                    updateStoryProgress(gameState.activeStoryId, pointsToApply);
+                    checkStoryCompletion(gameState.activeStoryId);
+                }
+                nextPlayer();
+            } else {
+                updateUI();
+            }
+        }
+
+        function updateStoryProgress(storyId, points) {
+            const story = gameState.inProgress.find(s => s.id === storyId);
+            if (story) {
+                story.hours = Math.max(0, story.hours - points);
+            }
+        }
+        
+        function checkStoryCompletion(storyId) {
+            const storyIndex = gameState.inProgress.findIndex(s => s.id === storyId);
+            if (storyIndex === -1) return;
+
+            const story = gameState.inProgress[storyIndex];
+            if (story.hours <= 0 && !story.blockedBy) {
+                const [completedStory] = gameState.inProgress.splice(storyIndex, 1);
+                completedStory.assignedTo = []; // Clear assignment on completion
+                gameState.done.push(completedStory);
+                showModal("História Concluída!", `A história #${completedStory.id} foi movida para "Feito"!`);
+            }
+        }
+
+        function useSolutionCard(solutionTitle, problemType, storyId) {
+            const solutionIndex = gameState.teamSolutions.findIndex(s => s.title === solutionTitle);
+            const story = gameState.inProgress.find(s => s.id === storyId);
+
+            if (solutionIndex > -1 && story && story.blockedBy === problemType) {
+                gameState.teamSolutions.splice(solutionIndex, 1);
+                story.blockedBy = null;
+                showModal("Problema Resolvido!", `A solução "${solutionTitle}" foi usada para desbloquear a história #${storyId}.`);
+                checkStoryCompletion(storyId);
+                updateUI();
+            }
+        }
+
+        function endSprint() {
+            gameState.phase = 'end_sprint';
+            const realizedVelocity = gameState.done.reduce((sum, story) => sum + story.originalHours, 0);
+            
+            let message = `<h2>Revisão e Retrospectiva da Sprint ${gameState.currentSprint}</h2>`;
+            message += `<p class="my-2"><strong>Planejado:</strong> ${gameState.plannedVelocity} horas</p>`;
+            message += `<p class="my-2"><strong>Realizado:</strong> ${realizedVelocity} horas (${gameState.done.length} histórias)</p>`;
+            
+            if (gameState.inProgress.length > 0) {
+                message += `<p class="my-4"><strong>Trabalho não finalizado:</strong> ${gameState.inProgress.length} história(s) permanecerá(ão) para a próxima sprint.</p>`;
+            } else {
+                 message += `<p class="my-4">Excelente! Todo o trabalho comprometido foi concluído!</p>`;
+            }
+
+            gameState.currentSprint++;
+            if (gameState.currentSprint > 3) {
+                message += `<hr class="my-4"><p class="text-xl font-bold">FIM DE JOGO!</p><p>Parabéns a todas as equipes!</p>`;
+                showModal("Fim de Jogo", message, () => {
+                    gameBoard.classList.add('hidden');
+                    setupScreen.classList.remove('hidden');
+                });
+            } else {
+                message += `<hr class="my-4"><p>Prepare-se para o planejamento da Sprint ${gameState.currentSprint}.</p>`;
+                showModal("Fim da Sprint", message, startSprint);
+            }
+        }
+
+        // --- UI & RENDERING ---
+
+        function createCardElement(cardData, columnType) {
+            const cardWrapper = document.createElement('div');
+            cardWrapper.className = 'story-card-wrapper';
+
+            const card = document.createElement('div');
+            card.className = 'card';
+            
+            let cardStyleClass = '';
+            let content = '';
+
+            switch (cardData.type || 'story') {
+                case 'story':
+                    cardStyleClass = 'story-card';
+                    card.dataset.storyId = cardData.id;
+                    card.dataset.column = columnType;
+                    
+                    let assignedPlayersHtml = '';
+                    if (cardData.assignedTo && cardData.assignedTo.length > 0) {
+                        assignedPlayersHtml = `
+                            <div class="mt-2 pt-2 border-t border-slate-200">
+                                <span class="text-xs font-semibold">Trabalhando:</span>
+                                <span class="text-xs text-slate-600">${cardData.assignedTo.join(', ')}</span>
+                            </div>
+                        `;
+                    }
+
+                    content = `
+                        <div class="flex-grow">
+                            <div class="card-title flex justify-between"><span>#${cardData.id} História</span> <span class="text-sm text-slate-600">${cardData.blockedBy ? `Bloqueado: ${cardData.blockedBy}` : ''}</span></div>
+                            <p class="card-description">${cardData.title}</p>
+                        </div>
+                        <div>
+                            <p class="card-hours text-lg">${cardData.hours} / ${cardData.originalHours}h</p>
+                            ${assignedPlayersHtml}
+                        </div>
+                    `;
+                    
+                    if (gameState.phase === 'planning') {
+                        card.classList.add('is-clickable');
+                    }
+
+                    if (cardData.blockedBy) {
+                        cardWrapper.classList.add('blocked');
+                    }
+                    break;
+                case 'solution':
+                    cardStyleClass = 'solution-card';
+                    card.dataset.solutionTitle = cardData.title;
+                     content = `
+                        <div class="card-title">${cardData.title}</div>
+                        <p class="card-description">${cardData.description}</p>
+                        <p class="text-xs text-slate-500 mt-2">Resolve: ${cardData.solves.join(', ')}</p>
+                    `;
+                    const blockedStory = gameState.inProgress.find(s => s.id === parseInt(card.dataset.solvesStoryId)) || gameState.inProgress.find(s => cardData.solves.includes(s.blockedBy));
+                    if(blockedStory) {
+                        card.dataset.solvesProblem = blockedStory.blockedBy;
+                        card.dataset.solvesStoryId = blockedStory.id;
+                        card.classList.add('is-clickable');
+                    }
+                    break;
+            }
+
+            card.classList.add(cardStyleClass);
+            card.innerHTML = content;
+            cardWrapper.appendChild(card);
+            return cardWrapper;
+        }
+
+        function updateUI() {
+            sprintCounter.textContent = `${gameState.currentSprint} / 3`;
+            dayCounter.textContent = `${gameState.currentDay} / 3`;
+            if (gameState.players.length > 0 && gameState.phase !== 'setup') {
+                currentPlayerEl.textContent = getCurrentPlayer().name;
+            }
+            plannedVelocityEl.textContent = gameState.plannedVelocity;
+
+            columns.backlog.innerHTML = '';
+            gameState.backlog.forEach(story => columns.backlog.appendChild(createCardElement(story, 'backlog')));
+            
+            columns.todo.innerHTML = '';
+            gameState.todo.forEach(story => columns.todo.appendChild(createCardElement(story, 'todo')));
+
+            columns.inprogress.innerHTML = '';
+            gameState.inProgress.forEach(story => columns.inprogress.appendChild(createCardElement(story, 'inprogress')));
+            
+            columns.done.innerHTML = '';
+            gameState.done.forEach(story => columns.done.appendChild(createCardElement(story, 'done')));
+
+            solutionArea.innerHTML = '';
+            if (gameState.teamSolutions.length > 0) {
+                gameState.teamSolutions.forEach(solution => solutionArea.appendChild(createCardElement(solution, 'solution')));
+            } else {
+                solutionArea.innerHTML = '<p class="text-slate-500">Nenhuma solução coletada ainda.</p>';
+            }
+        }
+
+        function showModal(title, body, onCloseCallback, categoryClass = '') {
+            modal.title.innerHTML = title;
+            modal.body.innerHTML = body;
+            modal.overlay.classList.remove('hidden');
+
+            // Reset classes
+            modal.title.className = 'text-2xl font-bold';
+            modal.body.className = 'mb-6';
+            
+            // Apply new classes based on category
+            switch (categoryClass) {
+                case 'problem':
+                    modal.title.classList.add('bg-orange-100', 'text-orange-800', 'p-4', 'rounded-t-md', '-mx-8', '-mt-8', 'mb-6');
+                    break;
+                case 'event':
+                    modal.title.classList.add('bg-slate-100', 'text-slate-800', 'p-4', 'rounded-t-md', '-mx-8', '-mt-8', 'mb-6');
+                    break;
+                case 'solution':
+                    modal.title.classList.add('bg-blue-100', 'text-blue-800', 'p-4', 'rounded-t-md', '-mx-8', '-mt-8', 'mb-6');
+                    break;
+                default:
+                    modal.title.classList.add('mb-4');
+            }
+            
+            const newBtn = modal.closeBtn.cloneNode(true);
+            modal.closeBtn.parentNode.replaceChild(newBtn, modal.closeBtn);
+            modal.closeBtn = newBtn;
+            
+            modal.closeBtn.onclick = () => {
+                modal.overlay.classList.add('hidden');
+                if (onCloseCallback) {
+                    onCloseCallback();
+                }
+            };
+        }
+
+        // --- EVENT LISTENERS ---
+        playerCountInput.addEventListener('input', generateNameInputs);
+        startGameBtn.addEventListener('click', initGame);
+        rollDiceBtn.addEventListener('click', rollDice);
+        drawCardBtn.addEventListener('click', drawOpportunityCard);
+        columns.container.addEventListener('click', handlePlanningClick);
+        solutionArea.addEventListener('click', (event) => {
+            const cardElement = event.target.closest('.card.is-clickable');
+            if (!cardElement) return;
+            
+            const title = cardElement.dataset.solutionTitle;
+            const problem = cardElement.dataset.solvesProblem;
+            const storyId = parseInt(cardElement.dataset.solvesStoryId);
+
+            if(title && problem && storyId) {
+                useSolutionCard(title, problem, storyId);
+            }
+        });
+
+        // Initial generation of name inputs
+        generateNameInputs();
+
+    </script>
+</body>
+</html>
